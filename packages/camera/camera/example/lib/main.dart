@@ -32,17 +32,16 @@ IconData getCameraLensIcon(CameraLensDirection direction) {
   throw ArgumentError('Unknown lens direction');
 }
 
-void logError(String code, String message) =>
-    print('Error: $code\nError Message: $message');
+void logError(String code, String message) => print('Error: $code\nError Message: $message');
 
-class _CameraExampleHomeState extends State<CameraExampleHome>
-    with WidgetsBindingObserver {
+class _CameraExampleHomeState extends State<CameraExampleHome> with WidgetsBindingObserver {
   CameraController controller;
   String imagePath;
   String videoPath;
   VideoPlayerController videoController;
   VoidCallback videoPlayerListener;
   bool enableAudio = true;
+  bool enableTorch = false;
 
   @override
   void initState() {
@@ -93,16 +92,19 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
               decoration: BoxDecoration(
                 color: Colors.black,
                 border: Border.all(
-                  color: controller != null && controller.value.isRecordingVideo
-                      ? Colors.redAccent
-                      : Colors.grey,
+                  color: controller != null && controller.value.isRecordingVideo ? Colors.redAccent : Colors.grey,
                   width: 3.0,
                 ),
               ),
             ),
           ),
           _captureControlRowWidget(),
-          _toggleAudioWidget(),
+          Row(
+            children: [
+              _toggleAudioWidget(),
+              _toggleFlashTorch(),
+            ],
+          ),
           Padding(
             padding: const EdgeInsets.all(5.0),
             child: Row(
@@ -158,6 +160,40 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
     );
   }
 
+  /// Toggle flash torch
+  Widget _toggleFlashTorch() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 25),
+      child: Row(
+        children: <Widget>[
+          const Text('Torch'),
+          Switch(
+            value: enableTorch,
+            onChanged: (bool value) async {
+              if (controller != null) {
+                await controller.toggleTorch(
+                  enableTorch,
+                  onTorchStatusChanged: (isEnabled) {
+                    _notifyTorch(isEnabled);
+                  },
+                );
+                _notifyTorch(value);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _notifyTorch(bool isEnable) {
+    setState(
+      () {
+        enableTorch = isEnable;
+      },
+    );
+  }
+
   /// Display the thumbnail of the captured image or video.
   Widget _thumbnailWidget() {
     return Expanded(
@@ -174,14 +210,10 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
                         : Container(
                             child: Center(
                               child: AspectRatio(
-                                  aspectRatio:
-                                      videoController.value.size != null
-                                          ? videoController.value.aspectRatio
-                                          : 1.0,
+                                  aspectRatio: videoController.value.size != null ? videoController.value.aspectRatio : 1.0,
                                   child: VideoPlayer(videoController)),
                             ),
-                            decoration: BoxDecoration(
-                                border: Border.all(color: Colors.pink)),
+                            decoration: BoxDecoration(border: Border.all(color: Colors.pink)),
                           ),
                     width: 64.0,
                     height: 64.0,
@@ -201,42 +233,24 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
         IconButton(
           icon: const Icon(Icons.camera_alt),
           color: Colors.blue,
-          onPressed: controller != null &&
-                  controller.value.isInitialized &&
-                  !controller.value.isRecordingVideo
-              ? onTakePictureButtonPressed
-              : null,
+          onPressed: controller != null && controller.value.isInitialized && !controller.value.isRecordingVideo ? onTakePictureButtonPressed : null,
         ),
         IconButton(
           icon: const Icon(Icons.videocam),
           color: Colors.blue,
-          onPressed: controller != null &&
-                  controller.value.isInitialized &&
-                  !controller.value.isRecordingVideo
-              ? onVideoRecordButtonPressed
-              : null,
+          onPressed: controller != null && controller.value.isInitialized && !controller.value.isRecordingVideo ? onVideoRecordButtonPressed : null,
         ),
         IconButton(
-          icon: controller != null && controller.value.isRecordingPaused
-              ? Icon(Icons.play_arrow)
-              : Icon(Icons.pause),
+          icon: controller != null && controller.value.isRecordingPaused ? Icon(Icons.play_arrow) : Icon(Icons.pause),
           color: Colors.blue,
-          onPressed: controller != null &&
-                  controller.value.isInitialized &&
-                  controller.value.isRecordingVideo
-              ? (controller != null && controller.value.isRecordingPaused
-                  ? onResumeButtonPressed
-                  : onPauseButtonPressed)
+          onPressed: controller != null && controller.value.isInitialized && controller.value.isRecordingVideo
+              ? (controller != null && controller.value.isRecordingPaused ? onResumeButtonPressed : onPauseButtonPressed)
               : null,
         ),
         IconButton(
           icon: const Icon(Icons.stop),
           color: Colors.red,
-          onPressed: controller != null &&
-                  controller.value.isInitialized &&
-                  controller.value.isRecordingVideo
-              ? onStopButtonPressed
-              : null,
+          onPressed: controller != null && controller.value.isInitialized && controller.value.isRecordingVideo ? onStopButtonPressed : null,
         )
       ],
     );
@@ -257,9 +271,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
               title: Icon(getCameraLensIcon(cameraDescription.lensDirection)),
               groupValue: controller?.description,
               value: cameraDescription,
-              onChanged: controller != null && controller.value.isRecordingVideo
-                  ? null
-                  : onNewCameraSelected,
+              onChanged: controller != null && controller.value.isRecordingVideo ? null : onNewCameraSelected,
             ),
           ),
         );
@@ -414,8 +426,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
   }
 
   Future<void> _startVideoPlayer() async {
-    final VideoPlayerController vcontroller =
-        VideoPlayerController.file(File(videoPath));
+    final VideoPlayerController vcontroller = VideoPlayerController.file(File(videoPath));
     videoPlayerListener = () {
       if (videoController != null && videoController.value.size != null) {
         // Refreshing the state to update video player with the correct ratio.

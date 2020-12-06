@@ -20,6 +20,7 @@ final class MethodCallHandlerImpl implements MethodChannel.MethodCallHandler {
   private final TextureRegistry textureRegistry;
   private final MethodChannel methodChannel;
   private final EventChannel imageStreamChannel;
+  private final EventChannel torchStreamChannel;
   private @Nullable Camera camera;
 
   MethodCallHandlerImpl(
@@ -36,6 +37,7 @@ final class MethodCallHandlerImpl implements MethodChannel.MethodCallHandler {
 
     methodChannel = new MethodChannel(messenger, "plugins.flutter.io/camera");
     imageStreamChannel = new EventChannel(messenger, "plugins.flutter.io/camera/imageStream");
+    torchStreamChannel = new EventChannel(messenger, "plugins.flutter.io/camera/torchStatusStream");
     methodChannel.setMethodCallHandler(this);
   }
 
@@ -131,6 +133,11 @@ final class MethodCallHandlerImpl implements MethodChannel.MethodCallHandler {
           result.success(null);
           break;
         }
+      case "toggleTorch":
+      {
+        camera.toggleTorch(call.argument("isEnable"), result, torchStreamChannel);
+        break;
+      }
       default:
         result.notImplemented();
         break;

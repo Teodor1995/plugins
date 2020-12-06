@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -53,6 +54,7 @@ enum ResolutionPreset {
 /// This is used by [CameraController.startImageStream].
 // ignore: inference_failure_on_function_return_type
 typedef onLatestImageAvailable = Function(CameraImage image);
+typedef onFlashStatusChanged = Function(bool isEnable);
 
 /// Returns the resolution preset as a String.
 String serializeResolutionPreset(ResolutionPreset resolutionPreset) {
@@ -90,8 +92,7 @@ CameraLensDirection _parseCameraLensDirection(String string) {
 /// May throw a [CameraException].
 Future<List<CameraDescription>> availableCameras() async {
   try {
-    final List<Map<dynamic, dynamic>> cameras = await _channel
-        .invokeListMethod<Map<dynamic, dynamic>>('availableCameras');
+    final List<Map<dynamic, dynamic>> cameras = await _channel.invokeListMethod<Map<dynamic, dynamic>>('availableCameras');
     return cameras.map((Map<dynamic, dynamic> camera) {
       return CameraDescription(
         name: camera['name'],
@@ -126,9 +127,7 @@ class CameraDescription {
 
   @override
   bool operator ==(Object o) {
-    return o is CameraDescription &&
-        o.name == name &&
-        o.lensDirection == lensDirection;
+    return o is CameraDescription && o.name == name && o.lensDirection == lensDirection;
   }
 
   @override
@@ -169,9 +168,7 @@ class CameraPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return controller.value.isInitialized
-        ? Texture(textureId: controller._textureId)
-        : Container();
+    return controller.value.isInitialized ? Texture(textureId: controller._textureId) : Container();
   }
 }
 
@@ -305,6 +302,7 @@ class CameraController extends ValueNotifier<CameraValue> {
   bool _isDisposed = false;
   StreamSubscription<dynamic> _eventSubscription;
   StreamSubscription<dynamic> _imageStreamSubscription;
+  StreamSubscription<dynamic> _torchStreamSubscription;
   Completer<void> _creatingCompleter;
 
   /// Checks whether [CameraController.dispose] has completed successfully.
@@ -323,8 +321,7 @@ class CameraController extends ValueNotifier<CameraValue> {
     }
     try {
       _creatingCompleter = Completer<void>();
-      final Map<String, dynamic> reply =
-          await _channel.invokeMapMethod<String, dynamic>(
+      final Map<String, dynamic> reply = await _channel.invokeMapMethod<String, dynamic>(
         'initialize',
         <String, dynamic>{
           'cameraName': description.name,
@@ -343,10 +340,7 @@ class CameraController extends ValueNotifier<CameraValue> {
     } on PlatformException catch (e) {
       throw CameraException(e.code, e.message);
     }
-    _eventSubscription =
-        EventChannel('flutter.io/cameraPlugin/cameraEvents$_textureId')
-            .receiveBroadcastStream()
-            .listen(_listener);
+    _eventSubscription = EventChannel('flutter.io/cameraPlugin/cameraEvents$_textureId').receiveBroadcastStream().listen(_listener);
     _creatingCompleter.complete();
     return _creatingCompleter.future;
   }
@@ -382,6 +376,36 @@ class CameraController extends ValueNotifier<CameraValue> {
       case 'cameraClosing':
         value = value.copyWith(isRecordingVideo: false);
         break;
+    }
+  }
+
+  ///Включение вспышки в режиме "Фонарика".
+  ///Событие onTorchStatusChanged случится в случае,
+  ///если фонарик будет выключен системным контроллером,
+  ///например, при сворачивании приложения
+  ///Подписка работает на Android > 22 (M) (06.12.2020)
+  Future<void> toggleTorch(
+    bool isEnable, {
+    onFlashStatusChanged onTorchStatusChanged,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>(
+        'toggleTorch',
+        <String, dynamic>{'isEnable': isEnable},
+      );
+      if (isEnable) {
+        const EventChannel torchEventChannel = EventChannel('plugins.flutter.io/camera/torchStatusStream');
+        _torchStreamSubscription = torchEventChannel.receiveBroadcastStream().listen((dynamic flashData) {
+          onTorchStatusChanged?.call(flashData);
+        });
+      } else {
+        if (_torchStreamSubscription != null) {
+          await _torchStreamSubscription.cancel();
+          _torchStreamSubscription = null;
+        }
+      }
+    } on PlatformException catch (e) {
+      throw CameraException(e.code, e.message);
     }
   }
 
@@ -459,10 +483,8 @@ class CameraController extends ValueNotifier<CameraValue> {
     } on PlatformException catch (e) {
       throw CameraException(e.code, e.message);
     }
-    const EventChannel cameraEventChannel =
-        EventChannel('plugins.flutter.io/camera/imageStream');
-    _imageStreamSubscription =
-        cameraEventChannel.receiveBroadcastStream().listen(
+    const EventChannel cameraEventChannel = EventChannel('plugins.flutter.io/camera/imageStream');
+    _imageStreamSubscription = cameraEventChannel.receiveBroadcastStream().listen(
       (dynamic imageData) {
         onAvailable(CameraImage._fromPlatformData(imageData));
       },
